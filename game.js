@@ -16,6 +16,7 @@ class CoinDash extends Phaser.Scene {
     this.add.grid(c.width / 2, c.height / 2, c.width, c.height, 40, 40,
       c.colors.background, 1, 0x24334b, 0.45);
     this.hud = this.add.text(18, 12, '', { font: '18px monospace', color: '#ffffff' });
+    this.createBushes();
     this.player = this.add.rectangle(c.width / 2, c.height / 2, 24, 24, c.colors.player);
     this.physics.add.existing(this.player);
     this.player.body.setCollideWorldBounds(true);
@@ -67,6 +68,8 @@ class CoinDash extends Phaser.Scene {
       this.nextGreenAt = this.time.now + this.greenDelay();
     });
     this.physics.add.overlap(this.player, this.drones, () => this.hitDrone());
+    this.physics.add.collider(this.player, this.bushes);
+    this.physics.add.collider(this.drones, this.bushes);
     // Grandma: dress + head, with a frying pan held out to her right.
     this.grandma = this.add.container(-100, -100, [
       this.add.rectangle(0, 6, 22, 26, c.colors.grandma),
@@ -79,6 +82,26 @@ class CoinDash extends Phaser.Scene {
     this.grandma.body.enable = false;
     this.grandmaNextRun = this.time.now + Phaser.Math.Between(c.grandmaDelayMin, c.grandmaDelayMax);
     this.physics.add.overlap(this.player, this.grandma, () => this.finish("grandmom got ya'"));
+    // Wizard: robe, face, pointed hat and a staff with a glowing tip. Decoration only, no physics.
+    this.wizard = this.add.container(0, 0, [
+      this.add.triangle(0, 8, -14, 16, 14, 16, 0, -12, c.colors.wizard),
+      this.add.circle(0, -12, 7, 0xf2c9a0),
+      this.add.triangle(0, -24, -10, 6, 10, 6, 0, -14, c.colors.wizard),
+      this.add.rectangle(16, 2, 3, 34, 0x8b5a2b),
+      this.add.circle(16, -16, 5, c.colors.spell)
+    ]).setVisible(false);
+    this.spellBeam = this.add.graphics();
+    this.spellText = this.add.text(18, 32, '', { font: '14px monospace', color: '#f7f06d' });
+    this.spell = null;
+    this.spellUntil = 0;
+    this.wizardLeaveAt = 0;
+    this.nextWizardAt = this.time.now + c.wizardEverySeconds * 1000;
+    this.lightning = this.add.graphics();
+    this.lightningTarget = null;
+    this.lightningStruck = false;
+    this.strikeAt = 0;
+    this.boltUntil = 0;
+    this.nextLightningAt = this.time.now + this.lightningDelay();
     this.cursors = this.input.keyboard.createCursorKeys();
     this.keys = this.input.keyboard.addKeys('W,A,S,D,R');
     this.input.keyboard.on('keydown-R', () => this.scene.restart());
@@ -101,6 +124,28 @@ class CoinDash extends Phaser.Scene {
     } catch (e) { /* ignore */ }
   }
 
+  // Random bushes that keep clear of each other, the player's start and the drones' starts.
+  createBushes() {
+    const c = COIN_DASH;
+    const r = c.bushRadius;
+    const keepClear = [{ x: c.width / 2, y: c.height / 2, d: c.bushStartClearance + r }];
+    for (let i = 0; i < c.droneCount; i++) keepClear.push({ x: 90 + i * 270, y: 100, d: r + 40 });
+    this.bushes = this.physics.add.staticGroup();
+    for (let tries = 0; this.bushes.getLength() < c.bushCount && tries < 500; tries++) {
+      const x = Phaser.Math.Between(r + 10, c.width - r - 10);
+      const y = Phaser.Math.Between(44 + r + 10, c.height - r - 10);
+      if (keepClear.some(p => Phaser.Math.Distance.Between(x, y, p.x, p.y) < p.d)) continue;
+      keepClear.push({ x, y, d: 2 * r + 30 });
+      this.add.rectangle(x, y + r - 2, 8, 14, c.colors.trunk);
+      const bush = this.add.circle(x, y, r, c.colors.bush);
+      this.add.circle(x - r * 0.35, y - r * 0.3, r * 0.5, c.colors.bushLight);
+      this.add.circle(x + r * 0.4, y - r * 0.1, r * 0.45, c.colors.bushLight);
+      this.add.circle(x - r * 0.05, y + r * 0.35, r * 0.4, c.colors.bushLight);
+      this.bushes.add(bush);
+      bush.body.setCircle(r);
+    }
+  }
+
   placeCoin() {
     const { x, y } = this.randomSpot();
     this.coin.setPosition(x, y);
@@ -109,12 +154,14 @@ class CoinDash extends Phaser.Scene {
 
   randomSpot() {
     const c = COIN_DASH;
-    // Avoid spawning a coin directly underneath the player.
-    let x, y;
+    // Avoid spawning a coin directly underneath the player or inside a bush.
+    // Bushes cover little of the field, so the try cap is only a safety net.
+    let x, y, tries = 0;
     do {
       x = Phaser.Math.Between(25, c.width - 25);
       y = Phaser.Math.Between(70, c.height - 25);
-    } while (Phaser.Math.Distance.Between(x, y, this.player.x, this.player.y) < 60);
+    } while (++tries < 200 && (Phaser.Math.Distance.Between(x, y, this.player.x, this.player.y) < 60
+      || this.bushes.getChildren().some(b => Phaser.Math.Distance.Between(x, y, b.x, b.y) < c.bushRadius + 20)));
     return { x, y };
   }
 
@@ -166,7 +213,7 @@ class CoinDash extends Phaser.Scene {
   }
 
   hitDrone() {
-    if (this.finished || this.time.now < this.invulnerableUntil) return;
+    if (this.finished || this.spell === 'Shield' || this.time.now < this.invulnerableUntil) return;
     this.lives--;
     if (this.lives <= 0) {
       this.finish('A drone caught you!');
@@ -204,6 +251,111 @@ class CoinDash extends Phaser.Scene {
     }
   }
 
+  castSpell() {
+    const c = COIN_DASH;
+    const now = this.time.now;
+    const { x, y } = this.randomSpot();
+    this.wizard.setPosition(x, y).setVisible(true);
+    this.wizardLeaveAt = now + c.wizardShowSeconds * 1000;
+    this.nextWizardAt = now + c.wizardEverySeconds * 1000;
+    // A new spell replaces the current one rather than stacking with it.
+    this.clearSpell();
+    this.spell = Phaser.Utils.Array.GetRandom(['Big', 'Small', 'Shield']);
+    this.spellUntil = now + c.wizardEffectSeconds * 1000;
+    // Arcade bodies follow the game object's scale, so the hitbox grows/shrinks (and stays centred) too.
+    if (this.spell === 'Big') this.player.setScale(c.wizardBigScale);
+    else if (this.spell === 'Small') this.player.setScale(c.wizardSmallScale);
+    else this.player.setStrokeStyle(3, c.colors.shield);
+  }
+
+  clearSpell() {
+    this.spell = null;
+    this.player.setScale(1);
+    this.player.setStrokeStyle();
+  }
+
+  updateWizard(now) {
+    if (now >= this.nextWizardAt) this.castSpell();
+    if (this.spell && now >= this.spellUntil) this.clearSpell();
+    this.spellBeam.clear();
+    if (!this.wizard.visible) return;
+    if (now >= this.wizardLeaveAt) {
+      this.wizard.setVisible(false);
+      return;
+    }
+    // Flickering beam from the staff tip to the player while the wizard is on the board.
+    this.spellBeam.lineStyle(3, COIN_DASH.colors.spell, Math.floor(now / 80) % 2 ? 0.9 : 0.4);
+    this.spellBeam.lineBetween(this.wizard.x + 16, this.wizard.y - 16, this.player.x, this.player.y);
+  }
+
+  lightningDelay() {
+    const c = COIN_DASH;
+    return Phaser.Math.Between(c.lightningMinSeconds * 1000, c.lightningMaxSeconds * 1000);
+  }
+
+  // Lightning aims close to the player on purpose, but never right on them, and stays on the board.
+  spotNearPlayer() {
+    const c = COIN_DASH;
+    const angle = Math.random() * Math.PI * 2;
+    const dist = Phaser.Math.Between(c.lightningNearMin, c.lightningNearMax);
+    return {
+      x: Phaser.Math.Clamp(this.player.x + Math.cos(angle) * dist, 20, c.width - 20),
+      y: Phaser.Math.Clamp(this.player.y + Math.sin(angle) * dist, 64, c.height - 20)
+    };
+  }
+
+  // Jagged bolt from the top of the board down to the target, plus a fading screen flash.
+  drawBolt(alpha) {
+    const c = COIN_DASH;
+    this.lightning.clear()
+      .fillStyle(0xffffff, 0.2 * alpha).fillRect(0, 0, c.width, c.height)
+      .lineStyle(6, c.colors.lightning, 0.5 * alpha).strokePoints(this.boltPoints)
+      .lineStyle(2, 0xffffff, alpha).strokePoints(this.boltPoints);
+  }
+
+  updateLightning(now) {
+    const c = COIN_DASH;
+    const t = this.lightningTarget;
+    if (!t) {
+      if (now < this.nextLightningAt) return;
+      this.lightningTarget = this.spotNearPlayer();
+      this.strikeAt = now + c.lightningWarningSeconds * 1000;
+      return;
+    }
+    if (now < this.strikeAt) {
+      const pulse = 0.5 + 0.5 * Math.sin(now / 50);
+      this.lightning.clear().lineStyle(3, c.colors.lightning, 0.4 + 0.6 * pulse)
+        .strokeCircle(t.x, t.y, c.lightningRadius * (0.8 + 0.2 * pulse));
+      return;
+    }
+    if (!this.lightningStruck) {
+      this.lightningStruck = true;
+      this.boltUntil = now + c.lightningBoltSeconds * 1000;
+      const steps = 8;
+      this.boltPoints = [];
+      for (let i = 0; i <= steps; i++) {
+        const jitter = i === 0 || i === steps ? 0 : Phaser.Math.Between(-25, 25);
+        this.boltPoints.push(new Phaser.Math.Vector2(t.x + jitter, t.y * i / steps));
+      }
+      this.drawBolt(1);
+      window.playThunderSound(this);
+      const hit = new Phaser.Geom.Circle(t.x, t.y, c.lightningRadius);
+      if (Phaser.Geom.Intersects.CircleToRectangle(hit, this.player.getBounds())) {
+        this.finish("Thunder got ya'");
+        this.drawBolt(1);  // finish() clears lightning; keep the bolt that did it on screen
+      }
+      return;
+    }
+    if (now < this.boltUntil) {
+      this.drawBolt((this.boltUntil - now) / (c.lightningBoltSeconds * 1000));
+      return;
+    }
+    this.lightning.clear();
+    this.lightningTarget = null;
+    this.lightningStruck = false;
+    this.nextLightningAt = now + this.lightningDelay();
+  }
+
   togglePause() {
     if (this.finished) return;
     const c = COIN_DASH;
@@ -226,6 +378,12 @@ class CoinDash extends Phaser.Scene {
       this.nextSilverAt += pausedFor;
       this.droneBoostUntil += pausedFor;
       this.nextGreenAt += pausedFor;
+      this.nextWizardAt += pausedFor;
+      this.wizardLeaveAt += pausedFor;
+      this.spellUntil += pausedFor;
+      this.nextLightningAt += pausedFor;
+      this.strikeAt += pausedFor;
+      this.boltUntil += pausedFor;
       this.paused = false;
       this.physics.resume();
       this.pauseOverlay.destroy();
@@ -248,6 +406,9 @@ class CoinDash extends Phaser.Scene {
     const invulnerable = now < this.invulnerableUntil;
     this.player.setAlpha(invulnerable && Math.floor(now / 100) % 2 ? 0.25 : 1);
     this.updateGrandma();
+    this.updateWizard(now);
+    this.updateLightning(now);
+    if (this.finished) return;
     if (!this.silver.visible && now >= this.nextSilverAt) this.showSilver();
     if (!this.green.visible && now >= this.nextGreenAt) this.showGreen();
     const dronesFast = now < this.droneBoostUntil;
@@ -256,6 +417,7 @@ class CoinDash extends Phaser.Scene {
     const boost = boosted ? `   Boost: ${Math.ceil((this.boostUntil - now) / 1000)}s` : '';
     const droneBoost = dronesFast ? `   Drones x${COIN_DASH.droneBoostFactor}: ${Math.ceil((this.droneBoostUntil - now) / 1000)}s` : '';
     this.hud.setText(`Coins: ${this.score}   Best: ${this.highScore}   Lives: ${this.lives}   Time: ${seconds}s${boost}${droneBoost}`);
+    this.spellText.setText(this.spell ? `Spell: ${this.spell} ${Math.ceil((this.spellUntil - now) / 1000)}s` : '');
     if (seconds === 0) this.finish('Time is up!');
   }
 
@@ -265,6 +427,8 @@ class CoinDash extends Phaser.Scene {
     // Sad trombone; the returned stop function cuts it off if R restarts the scene.
     this.events.once('shutdown', window.playGameOverSound(this));
     this.physics.pause();
+    // A pending warning or a fading bolt must not linger frozen under the end screen.
+    this.lightning.clear();
     // Ending while paused (O key) must not leave the pause box under the end screen.
     if (this.pauseOverlay) this.pauseOverlay.destroy();
     const isNewBest = this.score > this.highScore;
