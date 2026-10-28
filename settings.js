@@ -6,5 +6,10 @@ window.COIN_DASH = {
   playerSpeed: 240,
   droneSpeed: 105,
   droneCount: 3,
-  colors: { background: 0x101c31, player: 0x71e8ce, coin: 0xffd166, drone: 0xff657a }
+  // Silver coin: appears after a random delay; eating it speeds the player up for a while.
+  silverMinSeconds: 5,
+  silverMaxSeconds: 12,
+  boostFactor: 1.5,
+  boostSeconds: 5,
+  colors: { background: 0x101c31, player: 0x71e8ce, coin: 0xffd166, drone: 0xff657a, silver: 0xdfe6ee }
 };
