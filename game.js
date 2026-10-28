@@ -186,6 +186,8 @@ class CoinDash extends Phaser.Scene {
   finish(reason) {
     if (this.finished) return;
     this.finished = true;
+    // Sad trombone; the returned stop function cuts it off if R restarts the scene.
+    this.events.once('shutdown', window.playGameOverSound(this));
     this.physics.pause();
     // Ending while paused (O key) must not leave the pause box under the end screen.
     if (this.pauseOverlay) this.pauseOverlay.destroy();
