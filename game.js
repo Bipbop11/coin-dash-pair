@@ -23,6 +23,19 @@ class CoinDash extends Phaser.Scene {
     this.physics.add.existing(this.coin);
     this.coin.body.setCircle(9);
     this.placeCoin();
+    this.silver = this.add.circle(0, 0, 9, c.colors.silver);
+    this.physics.add.existing(this.silver);
+    this.silver.body.setCircle(9);
+    this.hideSilver();
+    this.boostUntil = 0;
+    this.nextSilverAt = this.time.now + this.silverDelay();
+    this.green = this.add.circle(0, 0, 9, c.colors.green);
+    this.physics.add.existing(this.green);
+    this.green.body.setCircle(9);
+    this.hideGreen();
+    this.droneBoostUntil = 0;
+    this.dronesFast = false;
+    this.nextGreenAt = this.time.now + this.greenDelay();
     this.drones = this.physics.add.group();
     for (let i = 0; i < c.droneCount; i++) {
       const drone = this.add.rectangle(90 + i * 270, 100, 26, 26, c.colors.drone);
@@ -35,7 +48,23 @@ class CoinDash extends Phaser.Scene {
       if (this.finished) return;
       this.score++;
       this.deadline += c.coinBonusSeconds * 1000;
+      window.playCoinSound(this, 'yellow');
       this.placeCoin();
+    });
+    this.physics.add.overlap(this.player, this.silver, () => {
+      if (this.finished || !this.silver.visible) return;
+      this.hideSilver();
+      window.playCoinSound(this, 'silver');
+      // Eating another silver coin while boosted restarts the timer instead of stacking.
+      this.boostUntil = this.time.now + c.boostSeconds * 1000;
+      this.nextSilverAt = this.time.now + this.silverDelay();
+    });
+    this.physics.add.overlap(this.player, this.green, () => {
+      if (this.finished || !this.green.visible) return;
+      this.hideGreen();
+      // Eating another green coin while drones are fast restarts the timer instead of stacking.
+      this.droneBoostUntil = this.time.now + c.droneBoostSeconds * 1000;
+      this.nextGreenAt = this.time.now + this.greenDelay();
     });
     this.physics.add.overlap(this.player, this.drones, () => this.hitDrone());
     // Grandma: dress + head, with a frying pan held out to her right.
@@ -73,15 +102,67 @@ class CoinDash extends Phaser.Scene {
   }
 
   placeCoin() {
+    const { x, y } = this.randomSpot();
+    this.coin.setPosition(x, y);
+    this.coin.body.reset(x, y);
+  }
+
+  randomSpot() {
     const c = COIN_DASH;
-    // Avoid spawning the next coin directly underneath the player.
+    // Avoid spawning a coin directly underneath the player.
     let x, y;
     do {
       x = Phaser.Math.Between(25, c.width - 25);
       y = Phaser.Math.Between(70, c.height - 25);
     } while (Phaser.Math.Distance.Between(x, y, this.player.x, this.player.y) < 60);
-    this.coin.setPosition(x, y);
-    this.coin.body.reset(x, y);
+    return { x, y };
+  }
+
+  silverDelay() {
+    const c = COIN_DASH;
+    return Phaser.Math.Between(c.silverMinSeconds * 1000, c.silverMaxSeconds * 1000);
+  }
+
+  showSilver() {
+    const { x, y } = this.randomSpot();
+    this.silver.setVisible(true);
+    this.silver.body.enable = true;
+    this.silver.setPosition(x, y);
+    this.silver.body.reset(x, y);
+  }
+
+  hideSilver() {
+    this.silver.setVisible(false);
+    this.silver.body.enable = false;
+  }
+
+  greenDelay() {
+    const c = COIN_DASH;
+    return Phaser.Math.Between(c.greenMinSeconds * 1000, c.greenMaxSeconds * 1000);
+  }
+
+  showGreen() {
+    const { x, y } = this.randomSpot();
+    this.green.setVisible(true);
+    this.green.body.enable = true;
+    this.green.setPosition(x, y);
+    this.green.body.reset(x, y);
+  }
+
+  hideGreen() {
+    this.green.setVisible(false);
+    this.green.body.enable = false;
+  }
+
+  // Keep each drone's direction (walls may have flipped it) but set its speed exactly.
+  setDroneSpeed(fast) {
+    const c = COIN_DASH;
+    const speed = c.droneSpeed * (fast ? c.droneBoostFactor : 1);
+    this.drones.getChildren().forEach(drone => {
+      const v = drone.body.velocity;
+      if (v.length() > 0) v.scale(speed / v.length());
+    });
+    this.dronesFast = fast;
   }
 
   hitDrone() {
@@ -137,9 +218,14 @@ class CoinDash extends Phaser.Scene {
       ]);
     } else {
       // Push the deadline back by the time spent paused so the clock picks up where it stopped.
-      this.deadline += this.time.now - this.pausedAt;
-      this.invulnerableUntil += this.time.now - this.pausedAt;
-      this.grandmaNextRun += this.time.now - this.pausedAt;
+      const pausedFor = this.time.now - this.pausedAt;
+      this.deadline += pausedFor;
+      this.invulnerableUntil += pausedFor;
+      this.grandmaNextRun += pausedFor;
+      this.boostUntil += pausedFor;
+      this.nextSilverAt += pausedFor;
+      this.droneBoostUntil += pausedFor;
+      this.nextGreenAt += pausedFor;
       this.paused = false;
       this.physics.resume();
       this.pauseOverlay.destroy();
@@ -153,20 +239,31 @@ class CoinDash extends Phaser.Scene {
       - Number(this.cursors.left.isDown || this.keys.A.isDown);
     const dy = Number(this.cursors.down.isDown || this.keys.S.isDown)
       - Number(this.cursors.up.isDown || this.keys.W.isDown);
-    const direction = new Phaser.Math.Vector2(dx, dy).normalize().scale(COIN_DASH.playerSpeed);
+    const now = this.time.now;
+    const boosted = now < this.boostUntil;
+    const speed = COIN_DASH.playerSpeed * (boosted ? COIN_DASH.boostFactor : 1);
+    const direction = new Phaser.Math.Vector2(dx, dy).normalize().scale(speed);
     this.player.body.setVelocity(direction.x, direction.y);
     // Blink while invulnerable; driven from update so it freezes along with the pause.
-    const invulnerable = this.time.now < this.invulnerableUntil;
-    this.player.setAlpha(invulnerable && Math.floor(this.time.now / 100) % 2 ? 0.25 : 1);
+    const invulnerable = now < this.invulnerableUntil;
+    this.player.setAlpha(invulnerable && Math.floor(now / 100) % 2 ? 0.25 : 1);
     this.updateGrandma();
-    const seconds = Math.max(0, Math.ceil((this.deadline - this.time.now) / 1000));
-    this.hud.setText(`Coins: ${this.score}      Best: ${this.highScore}      Lives: ${this.lives}      Time: ${seconds}s`);
+    if (!this.silver.visible && now >= this.nextSilverAt) this.showSilver();
+    if (!this.green.visible && now >= this.nextGreenAt) this.showGreen();
+    const dronesFast = now < this.droneBoostUntil;
+    if (dronesFast !== this.dronesFast) this.setDroneSpeed(dronesFast);
+    const seconds = Math.max(0, Math.ceil((this.deadline - now) / 1000));
+    const boost = boosted ? `   Boost: ${Math.ceil((this.boostUntil - now) / 1000)}s` : '';
+    const droneBoost = dronesFast ? `   Drones x${COIN_DASH.droneBoostFactor}: ${Math.ceil((this.droneBoostUntil - now) / 1000)}s` : '';
+    this.hud.setText(`Coins: ${this.score}   Best: ${this.highScore}   Lives: ${this.lives}   Time: ${seconds}s${boost}${droneBoost}`);
     if (seconds === 0) this.finish('Time is up!');
   }
 
   finish(reason) {
     if (this.finished) return;
     this.finished = true;
+    // Sad trombone; the returned stop function cuts it off if R restarts the scene.
+    this.events.once('shutdown', window.playGameOverSound(this));
     this.physics.pause();
     // Ending while paused (O key) must not leave the pause box under the end screen.
     if (this.pauseOverlay) this.pauseOverlay.destroy();
