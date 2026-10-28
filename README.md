@@ -8,6 +8,7 @@ press P to pause and R to restart. This is deliberately small so you can add fea
 ## Team
 
 - Ohad (Bipbop11)
+- Yaacov (yaacovpinkert)
 
 ## Run it locally
 
