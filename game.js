@@ -82,6 +82,20 @@ class CoinDash extends Phaser.Scene {
     this.grandma.body.enable = false;
     this.grandmaNextRun = this.time.now + Phaser.Math.Between(c.grandmaDelayMin, c.grandmaDelayMax);
     this.physics.add.overlap(this.player, this.grandma, () => this.finish("grandmom got ya'"));
+    // Wizard: robe, face, pointed hat and a staff with a glowing tip. Decoration only, no physics.
+    this.wizard = this.add.container(0, 0, [
+      this.add.triangle(0, 8, -14, 16, 14, 16, 0, -12, c.colors.wizard),
+      this.add.circle(0, -12, 7, 0xf2c9a0),
+      this.add.triangle(0, -24, -10, 6, 10, 6, 0, -14, c.colors.wizard),
+      this.add.rectangle(16, 2, 3, 34, 0x8b5a2b),
+      this.add.circle(16, -16, 5, c.colors.spell)
+    ]).setVisible(false);
+    this.spellBeam = this.add.graphics();
+    this.spellText = this.add.text(18, 32, '', { font: '14px monospace', color: '#f7f06d' });
+    this.spell = null;
+    this.spellUntil = 0;
+    this.wizardLeaveAt = 0;
+    this.nextWizardAt = this.time.now + c.wizardEverySeconds * 1000;
     this.cursors = this.input.keyboard.createCursorKeys();
     this.keys = this.input.keyboard.addKeys('W,A,S,D,R');
     this.input.keyboard.on('keydown-R', () => this.scene.restart());
@@ -193,7 +207,7 @@ class CoinDash extends Phaser.Scene {
   }
 
   hitDrone() {
-    if (this.finished || this.time.now < this.invulnerableUntil) return;
+    if (this.finished || this.spell === 'Shield' || this.time.now < this.invulnerableUntil) return;
     this.lives--;
     if (this.lives <= 0) {
       this.finish('A drone caught you!');
@@ -231,6 +245,43 @@ class CoinDash extends Phaser.Scene {
     }
   }
 
+  castSpell() {
+    const c = COIN_DASH;
+    const now = this.time.now;
+    const { x, y } = this.randomSpot();
+    this.wizard.setPosition(x, y).setVisible(true);
+    this.wizardLeaveAt = now + c.wizardShowSeconds * 1000;
+    this.nextWizardAt = now + c.wizardEverySeconds * 1000;
+    // A new spell replaces the current one rather than stacking with it.
+    this.clearSpell();
+    this.spell = Phaser.Utils.Array.GetRandom(['Big', 'Small', 'Shield']);
+    this.spellUntil = now + c.wizardEffectSeconds * 1000;
+    // Arcade bodies follow the game object's scale, so the hitbox grows/shrinks (and stays centred) too.
+    if (this.spell === 'Big') this.player.setScale(c.wizardBigScale);
+    else if (this.spell === 'Small') this.player.setScale(c.wizardSmallScale);
+    else this.player.setStrokeStyle(3, c.colors.shield);
+  }
+
+  clearSpell() {
+    this.spell = null;
+    this.player.setScale(1);
+    this.player.setStrokeStyle();
+  }
+
+  updateWizard(now) {
+    if (now >= this.nextWizardAt) this.castSpell();
+    if (this.spell && now >= this.spellUntil) this.clearSpell();
+    this.spellBeam.clear();
+    if (!this.wizard.visible) return;
+    if (now >= this.wizardLeaveAt) {
+      this.wizard.setVisible(false);
+      return;
+    }
+    // Flickering beam from the staff tip to the player while the wizard is on the board.
+    this.spellBeam.lineStyle(3, COIN_DASH.colors.spell, Math.floor(now / 80) % 2 ? 0.9 : 0.4);
+    this.spellBeam.lineBetween(this.wizard.x + 16, this.wizard.y - 16, this.player.x, this.player.y);
+  }
+
   togglePause() {
     if (this.finished) return;
     const c = COIN_DASH;
@@ -253,6 +304,9 @@ class CoinDash extends Phaser.Scene {
       this.nextSilverAt += pausedFor;
       this.droneBoostUntil += pausedFor;
       this.nextGreenAt += pausedFor;
+      this.nextWizardAt += pausedFor;
+      this.wizardLeaveAt += pausedFor;
+      this.spellUntil += pausedFor;
       this.paused = false;
       this.physics.resume();
       this.pauseOverlay.destroy();
@@ -275,6 +329,7 @@ class CoinDash extends Phaser.Scene {
     const invulnerable = now < this.invulnerableUntil;
     this.player.setAlpha(invulnerable && Math.floor(now / 100) % 2 ? 0.25 : 1);
     this.updateGrandma();
+    this.updateWizard(now);
     if (!this.silver.visible && now >= this.nextSilverAt) this.showSilver();
     if (!this.green.visible && now >= this.nextGreenAt) this.showGreen();
     const dronesFast = now < this.droneBoostUntil;
@@ -283,6 +338,7 @@ class CoinDash extends Phaser.Scene {
     const boost = boosted ? `   Boost: ${Math.ceil((this.boostUntil - now) / 1000)}s` : '';
     const droneBoost = dronesFast ? `   Drones x${COIN_DASH.droneBoostFactor}: ${Math.ceil((this.droneBoostUntil - now) / 1000)}s` : '';
     this.hud.setText(`Coins: ${this.score}   Best: ${this.highScore}   Lives: ${this.lives}   Time: ${seconds}s${boost}${droneBoost}`);
+    this.spellText.setText(this.spell ? `Spell: ${this.spell} ${Math.ceil((this.spellUntil - now) / 1000)}s` : '');
     if (seconds === 0) this.finish('Time is up!');
   }
 
