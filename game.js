@@ -20,6 +20,12 @@ class CoinDash extends Phaser.Scene {
     this.physics.add.existing(this.coin);
     this.coin.body.setCircle(9);
     this.placeCoin();
+    this.silver = this.add.circle(0, 0, 9, c.colors.silver);
+    this.physics.add.existing(this.silver);
+    this.silver.body.setCircle(9);
+    this.hideSilver();
+    this.boostUntil = 0;
+    this.nextSilverAt = this.time.now + this.silverDelay();
     this.drones = this.physics.add.group();
     for (let i = 0; i < c.droneCount; i++) {
       const drone = this.add.rectangle(90 + i * 270, 100, 26, 26, c.colors.drone);
@@ -33,6 +39,13 @@ class CoinDash extends Phaser.Scene {
       this.score++;
       this.placeCoin();
     });
+    this.physics.add.overlap(this.player, this.silver, () => {
+      if (this.finished || !this.silver.visible) return;
+      this.hideSilver();
+      // Eating another silver coin while boosted restarts the timer instead of stacking.
+      this.boostUntil = this.time.now + c.boostSeconds * 1000;
+      this.nextSilverAt = this.time.now + this.silverDelay();
+    });
     this.physics.add.overlap(this.player, this.drones, () => this.finish('A drone caught you!'));
     this.cursors = this.input.keyboard.createCursorKeys();
     this.keys = this.input.keyboard.addKeys('W,A,S,D,R');
@@ -42,15 +55,38 @@ class CoinDash extends Phaser.Scene {
   }
 
   placeCoin() {
+    const { x, y } = this.randomSpot();
+    this.coin.setPosition(x, y);
+    this.coin.body.reset(x, y);
+  }
+
+  randomSpot() {
     const c = COIN_DASH;
-    // Avoid spawning the next coin directly underneath the player.
+    // Avoid spawning a coin directly underneath the player.
     let x, y;
     do {
       x = Phaser.Math.Between(25, c.width - 25);
       y = Phaser.Math.Between(70, c.height - 25);
     } while (Phaser.Math.Distance.Between(x, y, this.player.x, this.player.y) < 60);
-    this.coin.setPosition(x, y);
-    this.coin.body.reset(x, y);
+    return { x, y };
+  }
+
+  silverDelay() {
+    const c = COIN_DASH;
+    return Phaser.Math.Between(c.silverMinSeconds * 1000, c.silverMaxSeconds * 1000);
+  }
+
+  showSilver() {
+    const { x, y } = this.randomSpot();
+    this.silver.setVisible(true);
+    this.silver.body.enable = true;
+    this.silver.setPosition(x, y);
+    this.silver.body.reset(x, y);
+  }
+
+  hideSilver() {
+    this.silver.setVisible(false);
+    this.silver.body.enable = false;
   }
 
   togglePause() {
@@ -67,7 +103,10 @@ class CoinDash extends Phaser.Scene {
       ]);
     } else {
       // Push the deadline back by the time spent paused so the clock picks up where it stopped.
-      this.deadline += this.time.now - this.pausedAt;
+      const pausedFor = this.time.now - this.pausedAt;
+      this.deadline += pausedFor;
+      this.boostUntil += pausedFor;
+      this.nextSilverAt += pausedFor;
       this.paused = false;
       this.physics.resume();
       this.pauseOverlay.destroy();
@@ -81,10 +120,15 @@ class CoinDash extends Phaser.Scene {
       - Number(this.cursors.left.isDown || this.keys.A.isDown);
     const dy = Number(this.cursors.down.isDown || this.keys.S.isDown)
       - Number(this.cursors.up.isDown || this.keys.W.isDown);
-    const direction = new Phaser.Math.Vector2(dx, dy).normalize().scale(COIN_DASH.playerSpeed);
+    const now = this.time.now;
+    const boosted = now < this.boostUntil;
+    const speed = COIN_DASH.playerSpeed * (boosted ? COIN_DASH.boostFactor : 1);
+    const direction = new Phaser.Math.Vector2(dx, dy).normalize().scale(speed);
     this.player.body.setVelocity(direction.x, direction.y);
-    const seconds = Math.max(0, Math.ceil((this.deadline - this.time.now) / 1000));
-    this.hud.setText(`Coins: ${this.score}                       Time: ${seconds}s`);
+    if (!this.silver.visible && now >= this.nextSilverAt) this.showSilver();
+    const seconds = Math.max(0, Math.ceil((this.deadline - now) / 1000));
+    const boost = boosted ? `   Boost: ${Math.ceil((this.boostUntil - now) / 1000)}s` : '';
+    this.hud.setText(`Coins: ${this.score}                       Time: ${seconds}s${boost}`);
     if (seconds === 0) this.finish('Time is up!');
   }
 
