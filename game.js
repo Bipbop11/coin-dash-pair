@@ -44,11 +44,13 @@ class CoinDash extends Phaser.Scene {
     this.physics.add.overlap(this.player, this.coin, () => {
       if (this.finished) return;
       this.score++;
+      window.playCoinSound(this, 'yellow');
       this.placeCoin();
     });
     this.physics.add.overlap(this.player, this.silver, () => {
       if (this.finished || !this.silver.visible) return;
       this.hideSilver();
+      window.playCoinSound(this, 'silver');
       // Eating another silver coin while boosted restarts the timer instead of stacking.
       this.boostUntil = this.time.now + c.boostSeconds * 1000;
       this.nextSilverAt = this.time.now + this.silverDelay();
