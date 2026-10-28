@@ -7,6 +7,7 @@ class CoinDash extends Phaser.Scene {
     this.score = 0;
     this.finished = false;
     this.paused = false;
+    this.pauseOverlay = null;
     this.deadline = this.time.now + c.roundSeconds * 1000;
     this.physics.world.setBounds(0, 44, c.width, c.height - 44);
     this.add.grid(c.width / 2, c.height / 2, c.width, c.height, 40, 40,
@@ -36,6 +37,7 @@ class CoinDash extends Phaser.Scene {
     this.cursors = this.input.keyboard.createCursorKeys();
     this.keys = this.input.keyboard.addKeys('W,A,S,D,R');
     this.input.keyboard.on('keydown-R', () => this.scene.restart());
+    this.input.keyboard.on('keydown-O', () => this.finish('You ended the game.'));
     this.input.keyboard.on('keydown-P', () => this.togglePause());
   }
 
@@ -69,6 +71,7 @@ class CoinDash extends Phaser.Scene {
       this.paused = false;
       this.physics.resume();
       this.pauseOverlay.destroy();
+      this.pauseOverlay = null;
     }
   }
 
@@ -89,6 +92,8 @@ class CoinDash extends Phaser.Scene {
     if (this.finished) return;
     this.finished = true;
     this.physics.pause();
+    // Ending while paused (O key) must not leave the pause box under the end screen.
+    if (this.pauseOverlay) this.pauseOverlay.destroy();
     const c = COIN_DASH;
     this.add.rectangle(c.width / 2, c.height / 2, 460, 150, 0x0a1120, 0.95);
     this.add.text(c.width / 2, c.height / 2,
