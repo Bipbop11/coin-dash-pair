@@ -38,6 +38,18 @@ class CoinDash extends Phaser.Scene {
       this.placeCoin();
     });
     this.physics.add.overlap(this.player, this.drones, () => this.hitDrone());
+    // Grandma: dress + head, with a frying pan held out to her right.
+    this.grandma = this.add.container(-100, -100, [
+      this.add.rectangle(0, 6, 22, 26, c.colors.grandma),
+      this.add.circle(0, -12, 9, 0xf2c9a0),
+      this.add.circle(0, -19, 5, 0xdddddd),
+      this.add.rectangle(17, 4, 12, 4, 0x222222),
+      this.add.circle(29, 4, 9, 0x444444)
+    ]).setSize(26, 40).setVisible(false);
+    this.physics.add.existing(this.grandma);
+    this.grandma.body.enable = false;
+    this.grandmaNextRun = this.time.now + Phaser.Math.Between(c.grandmaDelayMin, c.grandmaDelayMax);
+    this.physics.add.overlap(this.player, this.grandma, () => this.finish("grandmom got ya'"));
     this.cursors = this.input.keyboard.createCursorKeys();
     this.keys = this.input.keyboard.addKeys('W,A,S,D,R');
     this.input.keyboard.on('keydown-R', () => this.scene.restart());
@@ -82,6 +94,35 @@ class CoinDash extends Phaser.Scene {
     this.invulnerableUntil = this.time.now + COIN_DASH.invulnerableSeconds * 1000;
   }
 
+  startGrandmaRun() {
+    const c = COIN_DASH;
+    // Start just outside a corner that is far from the player and run towards the opposite corner,
+    // aimed a little off so the runs do not all cross the centre.
+    const corners = [[-40, 4], [c.width + 40, 4], [-40, c.height + 40], [c.width + 40, c.height + 40]]
+      .filter(([x, y]) => Phaser.Math.Distance.Between(x, y, this.player.x, this.player.y) > 300);
+    const [x, y] = Phaser.Utils.Array.GetRandom(corners);
+    const angle = Phaser.Math.Angle.Between(x, y, c.width - x + Phaser.Math.Between(-200, 200), c.height + 44 - y);
+    this.grandma.setPosition(x, y).setVisible(true);
+    this.grandma.body.enable = true;
+    this.grandma.body.reset(x, y);
+    this.grandma.body.setVelocity(Math.cos(angle) * c.grandmaSpeed, Math.sin(angle) * c.grandmaSpeed);
+  }
+
+  updateGrandma() {
+    const c = COIN_DASH;
+    const g = this.grandma;
+    if (!g.body.enable) {
+      if (this.time.now >= this.grandmaNextRun) this.startGrandmaRun();
+      return;
+    }
+    if (g.x < -60 || g.x > c.width + 60 || g.y < -20 || g.y > c.height + 60) {
+      g.body.stop();
+      g.body.enable = false;
+      g.setVisible(false);
+      this.grandmaNextRun = this.time.now + Phaser.Math.Between(c.grandmaDelayMin, c.grandmaDelayMax);
+    }
+  }
+
   togglePause() {
     if (this.finished) return;
     const c = COIN_DASH;
@@ -98,6 +139,7 @@ class CoinDash extends Phaser.Scene {
       // Push the deadline back by the time spent paused so the clock picks up where it stopped.
       this.deadline += this.time.now - this.pausedAt;
       this.invulnerableUntil += this.time.now - this.pausedAt;
+      this.grandmaNextRun += this.time.now - this.pausedAt;
       this.paused = false;
       this.physics.resume();
       this.pauseOverlay.destroy();
@@ -116,6 +158,7 @@ class CoinDash extends Phaser.Scene {
     // Blink while invulnerable; driven from update so it freezes along with the pause.
     const invulnerable = this.time.now < this.invulnerableUntil;
     this.player.setAlpha(invulnerable && Math.floor(this.time.now / 100) % 2 ? 0.25 : 1);
+    this.updateGrandma();
     const seconds = Math.max(0, Math.ceil((this.deadline - this.time.now) / 1000));
     this.hud.setText(`Coins: ${this.score}      Best: ${this.highScore}      Lives: ${this.lives}      Time: ${seconds}s`);
     if (seconds === 0) this.finish('Time is up!');
