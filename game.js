@@ -96,6 +96,12 @@ class CoinDash extends Phaser.Scene {
     this.spellUntil = 0;
     this.wizardLeaveAt = 0;
     this.nextWizardAt = this.time.now + c.wizardEverySeconds * 1000;
+    this.lightning = this.add.graphics();
+    this.lightningTarget = null;
+    this.lightningStruck = false;
+    this.strikeAt = 0;
+    this.boltUntil = 0;
+    this.nextLightningAt = this.time.now + this.lightningDelay();
     this.cursors = this.input.keyboard.createCursorKeys();
     this.keys = this.input.keyboard.addKeys('W,A,S,D,R');
     this.input.keyboard.on('keydown-R', () => this.scene.restart());
@@ -282,6 +288,74 @@ class CoinDash extends Phaser.Scene {
     this.spellBeam.lineBetween(this.wizard.x + 16, this.wizard.y - 16, this.player.x, this.player.y);
   }
 
+  lightningDelay() {
+    const c = COIN_DASH;
+    return Phaser.Math.Between(c.lightningMinSeconds * 1000, c.lightningMaxSeconds * 1000);
+  }
+
+  // Lightning aims close to the player on purpose, but never right on them, and stays on the board.
+  spotNearPlayer() {
+    const c = COIN_DASH;
+    const angle = Math.random() * Math.PI * 2;
+    const dist = Phaser.Math.Between(c.lightningNearMin, c.lightningNearMax);
+    return {
+      x: Phaser.Math.Clamp(this.player.x + Math.cos(angle) * dist, 20, c.width - 20),
+      y: Phaser.Math.Clamp(this.player.y + Math.sin(angle) * dist, 64, c.height - 20)
+    };
+  }
+
+  // Jagged bolt from the top of the board down to the target, plus a fading screen flash.
+  drawBolt(alpha) {
+    const c = COIN_DASH;
+    this.lightning.clear()
+      .fillStyle(0xffffff, 0.2 * alpha).fillRect(0, 0, c.width, c.height)
+      .lineStyle(6, c.colors.lightning, 0.5 * alpha).strokePoints(this.boltPoints)
+      .lineStyle(2, 0xffffff, alpha).strokePoints(this.boltPoints);
+  }
+
+  updateLightning(now) {
+    const c = COIN_DASH;
+    const t = this.lightningTarget;
+    if (!t) {
+      if (now < this.nextLightningAt) return;
+      this.lightningTarget = this.spotNearPlayer();
+      this.strikeAt = now + c.lightningWarningSeconds * 1000;
+      return;
+    }
+    if (now < this.strikeAt) {
+      const pulse = 0.5 + 0.5 * Math.sin(now / 50);
+      this.lightning.clear().lineStyle(3, c.colors.lightning, 0.4 + 0.6 * pulse)
+        .strokeCircle(t.x, t.y, c.lightningRadius * (0.8 + 0.2 * pulse));
+      return;
+    }
+    if (!this.lightningStruck) {
+      this.lightningStruck = true;
+      this.boltUntil = now + c.lightningBoltSeconds * 1000;
+      const steps = 8;
+      this.boltPoints = [];
+      for (let i = 0; i <= steps; i++) {
+        const jitter = i === 0 || i === steps ? 0 : Phaser.Math.Between(-25, 25);
+        this.boltPoints.push(new Phaser.Math.Vector2(t.x + jitter, t.y * i / steps));
+      }
+      this.drawBolt(1);
+      window.playThunderSound(this);
+      const hit = new Phaser.Geom.Circle(t.x, t.y, c.lightningRadius);
+      if (Phaser.Geom.Intersects.CircleToRectangle(hit, this.player.getBounds())) {
+        this.finish("Thunder got ya'");
+        this.drawBolt(1);  // finish() clears lightning; keep the bolt that did it on screen
+      }
+      return;
+    }
+    if (now < this.boltUntil) {
+      this.drawBolt((this.boltUntil - now) / (c.lightningBoltSeconds * 1000));
+      return;
+    }
+    this.lightning.clear();
+    this.lightningTarget = null;
+    this.lightningStruck = false;
+    this.nextLightningAt = now + this.lightningDelay();
+  }
+
   togglePause() {
     if (this.finished) return;
     const c = COIN_DASH;
@@ -307,6 +381,9 @@ class CoinDash extends Phaser.Scene {
       this.nextWizardAt += pausedFor;
       this.wizardLeaveAt += pausedFor;
       this.spellUntil += pausedFor;
+      this.nextLightningAt += pausedFor;
+      this.strikeAt += pausedFor;
+      this.boltUntil += pausedFor;
       this.paused = false;
       this.physics.resume();
       this.pauseOverlay.destroy();
@@ -330,6 +407,8 @@ class CoinDash extends Phaser.Scene {
     this.player.setAlpha(invulnerable && Math.floor(now / 100) % 2 ? 0.25 : 1);
     this.updateGrandma();
     this.updateWizard(now);
+    this.updateLightning(now);
+    if (this.finished) return;
     if (!this.silver.visible && now >= this.nextSilverAt) this.showSilver();
     if (!this.green.visible && now >= this.nextGreenAt) this.showGreen();
     const dronesFast = now < this.droneBoostUntil;
@@ -348,6 +427,8 @@ class CoinDash extends Phaser.Scene {
     // Sad trombone; the returned stop function cuts it off if R restarts the scene.
     this.events.once('shutdown', window.playGameOverSound(this));
     this.physics.pause();
+    // A pending warning or a fading bolt must not linger frozen under the end screen.
+    this.lightning.clear();
     // Ending while paused (O key) must not leave the pause box under the end screen.
     if (this.pauseOverlay) this.pauseOverlay.destroy();
     const isNewBest = this.score > this.highScore;

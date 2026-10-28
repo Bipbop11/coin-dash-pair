@@ -33,7 +33,15 @@ window.COIN_DASH = {
   wizardEffectSeconds: 10,
   wizardBigScale: 1.6,
   wizardSmallScale: 0.6,
+  // Lightning: strikes a random spot near the player after a warning ring; a hit ends the game.
+  lightningMinSeconds: 3,
+  lightningMaxSeconds: 6,
+  lightningWarningSeconds: 0.8,
+  lightningBoltSeconds: 0.25,
+  lightningRadius: 28,
+  lightningNearMin: 40,
+  lightningNearMax: 110,
   colors: { background: 0x101c31, player: 0x71e8ce, coin: 0xffd166, drone: 0xff657a, silver: 0xdfe6ee,
     green: 0x4cd964, grandma: 0xc77dff, bush: 0x2f8f46, bushLight: 0x43b05c, trunk: 0x6b4a2b, wizard: 0x5b5fef,
-    spell: 0xf7f06d, shield: 0xffffff }
+    spell: 0xf7f06d, shield: 0xffffff, lightning: 0xfff3a0 }
 };
