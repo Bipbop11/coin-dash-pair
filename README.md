@@ -5,6 +5,10 @@ press P to pause and R to restart. This is deliberately small so you can add fea
 
 **Play it here:** https://www.avivz.net/coin-dash/
 
+## Team
+
+- Ohad (Bipbop11)
+
 ## Run it locally
 
 Clone the repository and open `index.html` in a browser. Everything is in the repository;
