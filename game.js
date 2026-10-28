@@ -5,6 +5,9 @@ class CoinDash extends Phaser.Scene {
   create() {
     const c = COIN_DASH;
     this.score = 0;
+    this.highScore = this.loadHighScore();
+    this.lives = c.lives;
+    this.invulnerableUntil = 0;
     this.finished = false;
     this.paused = false;
     this.pauseOverlay = null;
@@ -44,6 +47,7 @@ class CoinDash extends Phaser.Scene {
     this.physics.add.overlap(this.player, this.coin, () => {
       if (this.finished) return;
       this.score++;
+      this.deadline += c.coinBonusSeconds * 1000;
       window.playCoinSound(this, 'yellow');
       this.placeCoin();
     });
@@ -62,12 +66,39 @@ class CoinDash extends Phaser.Scene {
       this.droneBoostUntil = this.time.now + c.droneBoostSeconds * 1000;
       this.nextGreenAt = this.time.now + this.greenDelay();
     });
-    this.physics.add.overlap(this.player, this.drones, () => this.finish('A drone caught you!'));
+    this.physics.add.overlap(this.player, this.drones, () => this.hitDrone());
+    // Grandma: dress + head, with a frying pan held out to her right.
+    this.grandma = this.add.container(-100, -100, [
+      this.add.rectangle(0, 6, 22, 26, c.colors.grandma),
+      this.add.circle(0, -12, 9, 0xf2c9a0),
+      this.add.circle(0, -19, 5, 0xdddddd),
+      this.add.rectangle(17, 4, 12, 4, 0x222222),
+      this.add.circle(29, 4, 9, 0x444444)
+    ]).setSize(26, 40).setVisible(false);
+    this.physics.add.existing(this.grandma);
+    this.grandma.body.enable = false;
+    this.grandmaNextRun = this.time.now + Phaser.Math.Between(c.grandmaDelayMin, c.grandmaDelayMax);
+    this.physics.add.overlap(this.player, this.grandma, () => this.finish("grandmom got ya'"));
     this.cursors = this.input.keyboard.createCursorKeys();
     this.keys = this.input.keyboard.addKeys('W,A,S,D,R');
     this.input.keyboard.on('keydown-R', () => this.scene.restart());
     this.input.keyboard.on('keydown-O', () => this.finish('You ended the game.'));
     this.input.keyboard.on('keydown-P', () => this.togglePause());
+  }
+
+  // Storage can be blocked (private mode, file://, policies), so never let it break the game.
+  loadHighScore() {
+    try {
+      return Number(localStorage.getItem(COIN_DASH.highScoreKey)) || 0;
+    } catch (e) {
+      return 0;
+    }
+  }
+
+  saveHighScore() {
+    try {
+      localStorage.setItem(COIN_DASH.highScoreKey, String(this.highScore));
+    } catch (e) { /* ignore */ }
   }
 
   placeCoin() {
@@ -134,6 +165,45 @@ class CoinDash extends Phaser.Scene {
     this.dronesFast = fast;
   }
 
+  hitDrone() {
+    if (this.finished || this.time.now < this.invulnerableUntil) return;
+    this.lives--;
+    if (this.lives <= 0) {
+      this.finish('A drone caught you!');
+      return;
+    }
+    this.invulnerableUntil = this.time.now + COIN_DASH.invulnerableSeconds * 1000;
+  }
+
+  startGrandmaRun() {
+    const c = COIN_DASH;
+    // Start just outside a corner that is far from the player and run towards the opposite corner,
+    // aimed a little off so the runs do not all cross the centre.
+    const corners = [[-40, 4], [c.width + 40, 4], [-40, c.height + 40], [c.width + 40, c.height + 40]]
+      .filter(([x, y]) => Phaser.Math.Distance.Between(x, y, this.player.x, this.player.y) > 300);
+    const [x, y] = Phaser.Utils.Array.GetRandom(corners);
+    const angle = Phaser.Math.Angle.Between(x, y, c.width - x + Phaser.Math.Between(-200, 200), c.height + 44 - y);
+    this.grandma.setPosition(x, y).setVisible(true);
+    this.grandma.body.enable = true;
+    this.grandma.body.reset(x, y);
+    this.grandma.body.setVelocity(Math.cos(angle) * c.grandmaSpeed, Math.sin(angle) * c.grandmaSpeed);
+  }
+
+  updateGrandma() {
+    const c = COIN_DASH;
+    const g = this.grandma;
+    if (!g.body.enable) {
+      if (this.time.now >= this.grandmaNextRun) this.startGrandmaRun();
+      return;
+    }
+    if (g.x < -60 || g.x > c.width + 60 || g.y < -20 || g.y > c.height + 60) {
+      g.body.stop();
+      g.body.enable = false;
+      g.setVisible(false);
+      this.grandmaNextRun = this.time.now + Phaser.Math.Between(c.grandmaDelayMin, c.grandmaDelayMax);
+    }
+  }
+
   togglePause() {
     if (this.finished) return;
     const c = COIN_DASH;
@@ -150,6 +220,8 @@ class CoinDash extends Phaser.Scene {
       // Push the deadline back by the time spent paused so the clock picks up where it stopped.
       const pausedFor = this.time.now - this.pausedAt;
       this.deadline += pausedFor;
+      this.invulnerableUntil += pausedFor;
+      this.grandmaNextRun += pausedFor;
       this.boostUntil += pausedFor;
       this.nextSilverAt += pausedFor;
       this.droneBoostUntil += pausedFor;
@@ -172,6 +244,10 @@ class CoinDash extends Phaser.Scene {
     const speed = COIN_DASH.playerSpeed * (boosted ? COIN_DASH.boostFactor : 1);
     const direction = new Phaser.Math.Vector2(dx, dy).normalize().scale(speed);
     this.player.body.setVelocity(direction.x, direction.y);
+    // Blink while invulnerable; driven from update so it freezes along with the pause.
+    const invulnerable = now < this.invulnerableUntil;
+    this.player.setAlpha(invulnerable && Math.floor(now / 100) % 2 ? 0.25 : 1);
+    this.updateGrandma();
     if (!this.silver.visible && now >= this.nextSilverAt) this.showSilver();
     if (!this.green.visible && now >= this.nextGreenAt) this.showGreen();
     const dronesFast = now < this.droneBoostUntil;
@@ -179,7 +255,7 @@ class CoinDash extends Phaser.Scene {
     const seconds = Math.max(0, Math.ceil((this.deadline - now) / 1000));
     const boost = boosted ? `   Boost: ${Math.ceil((this.boostUntil - now) / 1000)}s` : '';
     const droneBoost = dronesFast ? `   Drones x${COIN_DASH.droneBoostFactor}: ${Math.ceil((this.droneBoostUntil - now) / 1000)}s` : '';
-    this.hud.setText(`Coins: ${this.score}                       Time: ${seconds}s${boost}${droneBoost}`);
+    this.hud.setText(`Coins: ${this.score}   Best: ${this.highScore}   Lives: ${this.lives}   Time: ${seconds}s${boost}${droneBoost}`);
     if (seconds === 0) this.finish('Time is up!');
   }
 
@@ -191,10 +267,16 @@ class CoinDash extends Phaser.Scene {
     this.physics.pause();
     // Ending while paused (O key) must not leave the pause box under the end screen.
     if (this.pauseOverlay) this.pauseOverlay.destroy();
+    const isNewBest = this.score > this.highScore;
+    if (isNewBest) {
+      this.highScore = this.score;
+      this.saveHighScore();
+    }
+    const best = `${isNewBest ? 'New high score! ' : ''}Best: ${this.highScore}`;
     const c = COIN_DASH;
-    this.add.rectangle(c.width / 2, c.height / 2, 460, 150, 0x0a1120, 0.95);
+    this.add.rectangle(c.width / 2, c.height / 2, 460, 190, 0x0a1120, 0.95);
     this.add.text(c.width / 2, c.height / 2,
-      `${reason}\n${this.score} coins collected\nPress R to try again`,
+      `${reason}\n${this.score} coins collected\n${best}\nPress R to try again`,
       { font: '24px monospace', color: '#ffffff', align: 'center', lineSpacing: 12 }
     ).setOrigin(0.5);
   }
