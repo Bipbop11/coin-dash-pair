@@ -6,6 +6,8 @@ class CoinDash extends Phaser.Scene {
     const c = COIN_DASH;
     this.score = 0;
     this.highScore = this.loadHighScore();
+    this.lives = c.lives;
+    this.invulnerableUntil = 0;
     this.finished = false;
     this.paused = false;
     this.pauseOverlay = null;
@@ -35,7 +37,7 @@ class CoinDash extends Phaser.Scene {
       this.deadline += c.coinBonusSeconds * 1000;
       this.placeCoin();
     });
-    this.physics.add.overlap(this.player, this.drones, () => this.finish('A drone caught you!'));
+    this.physics.add.overlap(this.player, this.drones, () => this.hitDrone());
     this.cursors = this.input.keyboard.createCursorKeys();
     this.keys = this.input.keyboard.addKeys('W,A,S,D,R');
     this.input.keyboard.on('keydown-R', () => this.scene.restart());
@@ -70,6 +72,16 @@ class CoinDash extends Phaser.Scene {
     this.coin.body.reset(x, y);
   }
 
+  hitDrone() {
+    if (this.finished || this.time.now < this.invulnerableUntil) return;
+    this.lives--;
+    if (this.lives <= 0) {
+      this.finish('A drone caught you!');
+      return;
+    }
+    this.invulnerableUntil = this.time.now + COIN_DASH.invulnerableSeconds * 1000;
+  }
+
   togglePause() {
     if (this.finished) return;
     const c = COIN_DASH;
@@ -85,6 +97,7 @@ class CoinDash extends Phaser.Scene {
     } else {
       // Push the deadline back by the time spent paused so the clock picks up where it stopped.
       this.deadline += this.time.now - this.pausedAt;
+      this.invulnerableUntil += this.time.now - this.pausedAt;
       this.paused = false;
       this.physics.resume();
       this.pauseOverlay.destroy();
@@ -100,8 +113,11 @@ class CoinDash extends Phaser.Scene {
       - Number(this.cursors.up.isDown || this.keys.W.isDown);
     const direction = new Phaser.Math.Vector2(dx, dy).normalize().scale(COIN_DASH.playerSpeed);
     this.player.body.setVelocity(direction.x, direction.y);
+    // Blink while invulnerable; driven from update so it freezes along with the pause.
+    const invulnerable = this.time.now < this.invulnerableUntil;
+    this.player.setAlpha(invulnerable && Math.floor(this.time.now / 100) % 2 ? 0.25 : 1);
     const seconds = Math.max(0, Math.ceil((this.deadline - this.time.now) / 1000));
-    this.hud.setText(`Coins: ${this.score}          Best: ${this.highScore}          Time: ${seconds}s`);
+    this.hud.setText(`Coins: ${this.score}      Best: ${this.highScore}      Lives: ${this.lives}      Time: ${seconds}s`);
     if (seconds === 0) this.finish('Time is up!');
   }
 
