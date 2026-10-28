@@ -23,6 +23,14 @@ window.COIN_DASH = {
   greenMaxSeconds: 16,
   droneBoostFactor: 2,
   droneBoostSeconds: 5,
+  // Lightning: strikes a random spot near the player after a warning ring; a hit ends the game.
+  lightningMinSeconds: 3,
+  lightningMaxSeconds: 6,
+  lightningWarningSeconds: 0.8,
+  lightningBoltSeconds: 0.25,
+  lightningRadius: 28,
+  lightningNearMin: 40,
+  lightningNearMax: 110,
   colors: { background: 0x101c31, player: 0x71e8ce, coin: 0xffd166, drone: 0xff657a, silver: 0xdfe6ee, green: 0x4cd964,
-    grandma: 0xc77dff }
+    grandma: 0xc77dff, lightning: 0xfff3a0 }
 };
