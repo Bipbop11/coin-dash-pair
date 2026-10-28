@@ -23,6 +23,6 @@ window.COIN_DASH = {
   greenMaxSeconds: 16,
   droneBoostFactor: 2,
   droneBoostSeconds: 5,
-  colors: { background: 0x101c31, player: 0x71e8ce, coin: 0xffd166, drone: 0xff657a, silver: 0xdfe6ee, green: 0x4cd964,
-    grandma: 0xc77dff }
+  colors: { background: 0xf4f1ea, player: 0x4f5bff, coin: 0xffc83d, drone: 0xff7a7a, silver: 0xd5dbe3, green: 0x3ccf91,
+    grandma: 0xb59cff }
 };
