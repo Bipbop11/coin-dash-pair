@@ -16,6 +16,7 @@ class CoinDash extends Phaser.Scene {
     this.add.grid(c.width / 2, c.height / 2, c.width, c.height, 40, 40,
       c.colors.background, 1, 0x24334b, 0.45);
     this.hud = this.add.text(18, 12, '', { font: '18px monospace', color: '#ffffff' });
+    this.createBushes();
     this.player = this.add.rectangle(c.width / 2, c.height / 2, 24, 24, c.colors.player);
     this.physics.add.existing(this.player);
     this.player.body.setCollideWorldBounds(true);
@@ -67,6 +68,8 @@ class CoinDash extends Phaser.Scene {
       this.nextGreenAt = this.time.now + this.greenDelay();
     });
     this.physics.add.overlap(this.player, this.drones, () => this.hitDrone());
+    this.physics.add.collider(this.player, this.bushes);
+    this.physics.add.collider(this.drones, this.bushes);
     // Grandma: dress + head, with a frying pan held out to her right.
     this.grandma = this.add.container(-100, -100, [
       this.add.rectangle(0, 6, 22, 26, c.colors.grandma),
@@ -101,6 +104,28 @@ class CoinDash extends Phaser.Scene {
     } catch (e) { /* ignore */ }
   }
 
+  // Random bushes that keep clear of each other, the player's start and the drones' starts.
+  createBushes() {
+    const c = COIN_DASH;
+    const r = c.bushRadius;
+    const keepClear = [{ x: c.width / 2, y: c.height / 2, d: c.bushStartClearance + r }];
+    for (let i = 0; i < c.droneCount; i++) keepClear.push({ x: 90 + i * 270, y: 100, d: r + 40 });
+    this.bushes = this.physics.add.staticGroup();
+    for (let tries = 0; this.bushes.getLength() < c.bushCount && tries < 500; tries++) {
+      const x = Phaser.Math.Between(r + 10, c.width - r - 10);
+      const y = Phaser.Math.Between(44 + r + 10, c.height - r - 10);
+      if (keepClear.some(p => Phaser.Math.Distance.Between(x, y, p.x, p.y) < p.d)) continue;
+      keepClear.push({ x, y, d: 2 * r + 30 });
+      this.add.rectangle(x, y + r - 2, 8, 14, c.colors.trunk);
+      const bush = this.add.circle(x, y, r, c.colors.bush);
+      this.add.circle(x - r * 0.35, y - r * 0.3, r * 0.5, c.colors.bushLight);
+      this.add.circle(x + r * 0.4, y - r * 0.1, r * 0.45, c.colors.bushLight);
+      this.add.circle(x - r * 0.05, y + r * 0.35, r * 0.4, c.colors.bushLight);
+      this.bushes.add(bush);
+      bush.body.setCircle(r);
+    }
+  }
+
   placeCoin() {
     const { x, y } = this.randomSpot();
     this.coin.setPosition(x, y);
@@ -109,12 +134,14 @@ class CoinDash extends Phaser.Scene {
 
   randomSpot() {
     const c = COIN_DASH;
-    // Avoid spawning a coin directly underneath the player.
-    let x, y;
+    // Avoid spawning a coin directly underneath the player or inside a bush.
+    // Bushes cover little of the field, so the try cap is only a safety net.
+    let x, y, tries = 0;
     do {
       x = Phaser.Math.Between(25, c.width - 25);
       y = Phaser.Math.Between(70, c.height - 25);
-    } while (Phaser.Math.Distance.Between(x, y, this.player.x, this.player.y) < 60);
+    } while (++tries < 200 && (Phaser.Math.Distance.Between(x, y, this.player.x, this.player.y) < 60
+      || this.bushes.getChildren().some(b => Phaser.Math.Distance.Between(x, y, b.x, b.y) < c.bushRadius + 20)));
     return { x, y };
   }
 

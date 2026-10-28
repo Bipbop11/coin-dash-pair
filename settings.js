@@ -23,6 +23,10 @@ window.COIN_DASH = {
   greenMaxSeconds: 16,
   droneBoostFactor: 2,
   droneBoostSeconds: 5,
+  // Bushes block the player and drones (grandma runs straight through); placed randomly each round.
+  bushCount: 5,
+  bushRadius: 26,
+  bushStartClearance: 80,
   colors: { background: 0x101c31, player: 0x71e8ce, coin: 0xffd166, drone: 0xff657a, silver: 0xdfe6ee, green: 0x4cd964,
-    grandma: 0xc77dff }
+    grandma: 0xc77dff, bush: 0x2f8f46, bushLight: 0x43b05c, trunk: 0x6b4a2b }
 };
