@@ -23,6 +23,12 @@ window.COIN_DASH = {
   greenMaxSeconds: 16,
   droneBoostFactor: 2,
   droneBoostSeconds: 5,
+  // Wizard: shows up every few seconds and casts a random spell (big, small or shield) on the player.
+  wizardEverySeconds: 10,
+  wizardShowSeconds: 1.5,
+  wizardEffectSeconds: 10,
+  wizardBigScale: 1.6,
+  wizardSmallScale: 0.6,
   colors: { background: 0x101c31, player: 0x71e8ce, coin: 0xffd166, drone: 0xff657a, silver: 0xdfe6ee, green: 0x4cd964,
-    grandma: 0xc77dff }
+    grandma: 0xc77dff, wizard: 0x5b5fef, spell: 0xf7f06d, shield: 0xffffff }
 };
